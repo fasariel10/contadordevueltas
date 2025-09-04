@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rastreo de Vueltas en Competencia</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn-danger {
+            background-color: #f44336;
+        }
+        .btn-danger:hover {
+            background-color: #da190b;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .notification {
+            display: none;
+            background-color: #ff9800;
+            color: white;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .time-display {
+            font-weight: bold;
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sistema de Rastreo de Vueltas en Competencia</h1>
+
+        <div id="alert" class="notification"></div>
+
+        <div class="form-group">
+            <label for="totalLaps">Número Total de Vueltas para Todos los Participantes:</label>
+            <input type="number" id="totalLaps" min="1" value="1" class="border p-2 w-full" />
+        </div>
+
+        <div class="form-group">
+            <label for="dorsal">Número de Dorsal:</label>
+            <input type="number" id="dorsal" min="1" class="border p-2" />
+            <button onclick="registerDorsal()" class="btn ml-2">Registrar Dorsal / Vuelta</button>
+        </div>
+
+        <button onclick="clearDorsals()" class="btn btn-danger mr-2">Borrar Todos los Dorsales</button>
+        <button onclick="resetSystem()" class="btn btn-danger">Reiniciar Sistema Completo</button>
+        <button onclick="downloadExcel()" class="btn mt-4">Descargar Excel</button>
+
+        <h2>Participantes</h2>
+        <table id="participantsTable">
+            <thead>
+                <tr>
+                    <th>Dorsal</th>
+                    <th>Vueltas Completadas</th>
+                    <th>Hora de Inicio</th>
+                    <th>Hora de Finalización</th>
+                    <th>Tiempo Total</th>
+                </tr>
+            </thead>
+            <tbody id="participantsBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let totalLaps = 1;
+        // participants: {
+        //   dorsal: {
+        //     startTime: Date,
+        //     laps: number,
+        //     finishTime: Date|null
+        //   }
+        // }
+        let participants = {};
+        let alertTimeout = null;
+
+        function formatTime(date) {
+            if (!date) return '';
+            return date.toLocaleTimeString('es-ES', { hour12: false });
+        }
+
+        function formatDuration(ms) {
+            if (ms == null) return '';
+            let totalSeconds = Math.floor(ms / 1000);
+            let h = Math.floor(totalSeconds / 3600);
+            let m = Math.floor((totalSeconds % 3600) / 60);
+            let s = totalSeconds % 60;
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        }
+
+        function showAlert(message) {
+            const alertDiv = document.getElementById('alert');
+            alertDiv.innerText = message;
+            alertDiv.style.display = 'block';
+            if (alertTimeout) clearTimeout(alertTimeout);
+            alertTimeout = setTimeout(() => { alertDiv.style.display = 'none'; }, 10000);
+        }
+
+        function updateTable() {
+            const tbody = document.getElementById('participantsBody');
+            tbody.innerHTML = '';
+            for (const dorsal in participants) {
+                const p = participants[dorsal];
+                const finishTimeStr = p.finishTime ? formatTime(p.finishTime) : 'No terminó';
+                const startTimeStr = formatTime(p.startTime);
+                let totalTimeStr = '';
+                if (p.finishTime && p.startTime) {
+                    totalTimeStr = formatDuration(p.finishTime - p.startTime);
+                }
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${dorsal}</td><td>${p.laps}</td><td>${startTimeStr}</td><td>${finishTimeStr}</td><td>${totalTimeStr}</td>`;
+                tbody.appendChild(tr);
+            }
+        }
+
+        function registerDorsal() {
+            const dorsalInput = document.getElementById('dorsal');
+            const dorsal = dorsalInput.value.trim();
+            if (!dorsal) {
+                alert('Por favor, ingresa un número de dorsal válido.');
+                return;
+            }
+            totalLaps = parseInt(document.getElementById('totalLaps').value);
+            if (isNaN(totalLaps) || totalLaps < 1) {
+                alert('Por favor, ingresa un número válido de vueltas totales (mayor o igual a 1).');
+                return;
+            }
+
+            if (!participants[dorsal]) {
+                // Primer registro: inicio individual
+                participants[dorsal] = {
+                    startTime: new Date(),
+                    laps: 0,
+                    finishTime: null
+                };
+                showAlert(`Dorsal ${dorsal} inició su prueba.`);
+            } else {
+                // Ya existe dorsal, contar vuelta
+                if (participants[dorsal].finishTime) {
+                    showAlert(`El dorsal ${dorsal} ya terminó la competencia.`);
+                    dorsalInput.value = '';
+                    return;
+                }
+                participants[dorsal].laps += 1;
+
+                if (participants[dorsal].laps === totalLaps - 1) {
+                    showAlert(`El dorsal ${dorsal} está en la última vuelta. Estén atentos.`);
+                }
+
+                if (participants[dorsal].laps >= totalLaps) {
+                    participants[dorsal].finishTime = new Date();
+                    showAlert(`El dorsal ${dorsal} terminó la competencia.`);
+                }
+            }
+
+            updateTable();
+            dorsalInput.value = '';
+            dorsalInput.focus();
+        }
+
+        function clearDorsals() {
+            if (confirm('Esto borrará todos los dorsales cargados. Continuar?')) {
+                participants = {};
+                updateTable();
+                document.getElementById('alert').style.display = 'none';
+            }
+        }
+
+        function resetSystem() {
+            if (confirm('Esto reiniciará todo el sistema, incluyendo dorsales y vueltas. Continuar?')) {
+                participants = {};
+                totalLaps = 1;
+                document.getElementById('totalLaps').value = '1';
+                document.getElementById('dorsal').value = '';
+                updateTable();
+                document.getElementById('alert').style.display = 'none';
+            }
+        }
+
+        function downloadExcel() {
+            if (Object.keys(participants).length === 0) {
+                alert('No hay datos para descargar.');
+                return;
+            }
+            let csvContent = "Dorsal,Vueltas Completadas,Hora de Inicio,Hora de Finalización,Tiempo Total\n";
+            for (const dorsal in participants) {
+                const p = participants[dorsal];
+                const startStr = formatTime(p.startTime);
+                const finishStr = p.finishTime ? formatTime(p.finishTime) : '';
+                const totalStr = (p.finishTime && p.startTime) ? formatDuration(p.finishTime - p.startTime) : '';
+                csvContent += `${dorsal},${p.laps},${startStr},${finishStr},${totalStr}\n`;
+            }
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'resultados_competencia.csv';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
